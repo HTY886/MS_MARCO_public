@@ -32,52 +32,109 @@ def process_file(filename, data_type, word_counter, char_counter):
     print("Generating {} examples...".format(data_type))
     examples = []
     eval_examples = {}
-    total = 0
+
     with open(filename, "r") as fh:
         source = json.load(fh)
-        for article in tqdm(source["data"]):
-            for para in article["paragraphs"]:
-                context = para["context"].replace(
-                    "''", '" ').replace("``", '" ')
-                context_tokens = word_tokenize(context)
-                context_chars = [list(token) for token in context_tokens]
-                spans = convert_idx(context, context_tokens)
-                for token in context_tokens:
-                    word_counter[token] += len(para["qas"])
-                    for char in token:
-                        char_counter[char] += len(para["qas"])
-                for qa in para["qas"]:
-                    total += 1
-                    ques = qa["question"].replace(
-                        "''", '" ').replace("``", '" ')
-                    ques_tokens = word_tokenize(ques)
-                    ques_chars = [list(token) for token in ques_tokens]
-                    for token in ques_tokens:
-                        word_counter[token] += 1
-                        for char in token:
-                            char_counter[char] += 1
-                    y1s, y2s = [], []
-                    answer_texts = []
-                    for answer in qa["answers"]:
-                        answer_text = answer["text"]
-                        answer_start = answer['answer_start']
-                        answer_end = answer_start + len(answer_text)
-                        answer_texts.append(answer_text)
-                        answer_span = []
-                        for idx, span in enumerate(spans):
-                            if not (answer_end <= span[0] or answer_start >= span[1]):
-                                answer_span.append(idx)
-                        y1, y2 = answer_span[0], answer_span[-1]
-                        y1s.append(y1)
-                        y2s.append(y2)
-                    example = {"context_tokens": context_tokens, "context_chars": context_chars, "ques_tokens": ques_tokens,
-                               "ques_chars": ques_chars, "y1s": y1s, "y2s": y2s, "id": total}
-                    examples.append(example)
-                    eval_examples[str(total)] = {
-                        "context": context, "spans": spans, "answers": answer_texts, "uuid": qa["id"]}
+        query_ids = source['query_id']
+        queries = source['query']
+        passages = source['passages']
+        answers = source.get('answers', {})
+
+        flat = ((qid, passages[qid], queries[qid], answers.get(qid)) for qid in query_ids)
+
+        organized, filtered_out = _organize(flat, 1, 1)
+
+        for qid, passage, query, ans, position in tqdm(organized):
+            context = passage['passage_text'].replace(
+                "''", '" ').replace("``", '" ')
+            context_tokens = word_tokenize(context)
+            context_chars = [list(token) for token in context_tokens]
+            spans = convert_idx(context, context_tokens)
+            for token in context_tokens:
+                word_counter[token] += 1
+                for char in token:
+                    char_counter[char] += 1
+
+            #for qa in para["qas"]:
+            ques = query.replace(
+                "''", '" ').replace("``", '" ')
+            ques_tokens = word_tokenize(ques)
+            ques_chars = [list(token) for token in ques_tokens]
+            for token in ques_tokens:
+                word_counter[token] += 1
+                for char in token:
+                    char_counter[char] += 1
+
+            y1s, y2s = [], []
+            answer_texts = []
+            #for answer in answers.get(qid):
+            answer_text = ans
+            answer_start = position[0]
+            answer_end = position[-1]
+            answer_texts.append(answer_text)
+            answer_span = []
+
+            for idx, span in enumerate(spans):
+                if not (answer_end <= span[0] or answer_start >= span[1]):
+                    answer_span.append(idx)
+
+            y1, y2 = answer_span[0], answer_span[-1]
+            y1s.append(y1)
+            y2s.append(y2)
+
+            example = {"context_tokens": context_tokens, "context_chars": context_chars, "ques_tokens": ques_tokens,
+                       "ques_chars": ques_chars, "y1s": y1s, "y2s": y2s, "id": qid}
+            examples.append(example)
+            eval_examples[str(qid)] = {
+                "context": context, "spans": spans, "answers": answer_texts, "uuid": qid}
         random.shuffle(examples)
         print("{} questions in total".format(len(examples)))
     return examples, eval_examples
+
+
+# PASTED FROM MSMARCOV2/BidafBaseline/scripts/dataset.py
+def _organize(flat, span_only, answered_only):
+    """
+    Filter the queries and consolidate the answer as needed.
+    """
+    filtered_out = set()
+
+    organized = []
+
+    for qid, passages, query, answers in tqdm(flat):
+        if answers is None and not answered_only:
+            filtered_out.add(qid)
+            continue  # Skip non-answered queries
+
+        matching = set()
+        for ans in answers:
+            if len(ans) == 0:
+                continue
+            for ind, passage in enumerate(passages):
+                pos = passage['passage_text'].find(ans)
+                if pos >= 0:
+                    matching.add(ind)
+                    organized.append((qid, passage, query, ans, (pos, pos+len(ans))))
+        # OK, found all spans.
+        if not span_only or not answered_only:
+            for ind, passage in enumerate(passages):
+                if ind in matching:
+                    continue
+                if passage.get('is_selected', False):
+                    matching.add(ind)
+                    organized.append((qid, passage, query,(0, len(passage))))
+                elif not answered_only:
+                    matching.add(ind)
+                    organized.append((qid, passage, query,(0, 0)))
+        # Went through the whole thing. If there's still not match, then it got
+        # filtered out.
+        if len(matching) == 0:
+            filtered_out.add(qid)
+
+    if len(filtered_out) > 0:
+        assert span_only or answered_only
+
+    return organized, filtered_out
 
 
 def get_embedding(counter, data_type, limit=-1, emb_file=None, size=None, vec_size=None, token2idx_dict=None):
