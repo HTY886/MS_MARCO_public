@@ -83,10 +83,10 @@ def process_file(filename, data_type, word_counter, char_counter):
             y2s.append(y2)
 
             example = {"context_tokens": context_tokens, "context_chars": context_chars, "ques_tokens": ques_tokens,
-                       "ques_chars": ques_chars, "y1s": y1s, "y2s": y2s, "id": qid}
+                       "ques_chars": ques_chars, "y1s": y1s, "y2s": y2s, "id": int(qid)}
             examples.append(example)
             eval_examples[str(qid)] = {
-                "context": context, "spans": spans, "answers": answer_texts, "uuid": qid}
+                "context": context, "spans": spans, "answers": answer_texts, "uuid": int(qid)}
         random.shuffle(examples)
         print("{} questions in total".format(len(examples)))
     return examples, eval_examples

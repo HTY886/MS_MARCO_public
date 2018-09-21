@@ -78,6 +78,10 @@ def convert_tokens(eval_file, qa_id, pp1, pp2):
         context = eval_file[str(qid)]["context"]
         spans = eval_file[str(qid)]["spans"]
         uuid = eval_file[str(qid)]["uuid"]
+
+        p1 = max(0, min(p1, len(spans)-1))
+        p2 = max(0, min(p2, len(spans)-1))
+
         start_idx = spans[p1][0]
         end_idx = spans[p2][1]
         answer_dict[str(qid)] = context[start_idx: end_idx]
