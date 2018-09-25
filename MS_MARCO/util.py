@@ -7,6 +7,7 @@ import string
 
 def get_record_parser(config, is_test=False):
     def parse(example):
+        passage_num = config.passage_num
         para_limit = config.test_para_limit if is_test else config.para_limit
         ques_limit = config.test_ques_limit if is_test else config.ques_limit
         char_limit = config.char_limit
@@ -18,22 +19,25 @@ def get_record_parser(config, is_test=False):
                                                "ques_char_idxs": tf.FixedLenFeature([], tf.string),
                                                "y1": tf.FixedLenFeature([], tf.string),
                                                "y2": tf.FixedLenFeature([], tf.string),
+                                               "is_select": tf.FixedLenFeature([], tf.string),
                                                "id": tf.FixedLenFeature([], tf.int64)
                                            })
         context_idxs = tf.reshape(tf.decode_raw(
-            features["context_idxs"], tf.int32), [para_limit])
+            features["context_idxs"], tf.int32), [passage_num, para_limit])
         ques_idxs = tf.reshape(tf.decode_raw(
-            features["ques_idxs"], tf.int32), [ques_limit])
+            features["ques_idxs"], tf.int32), [passage_num, ques_limit])
         context_char_idxs = tf.reshape(tf.decode_raw(
-            features["context_char_idxs"], tf.int32), [para_limit, char_limit])
+            features["context_char_idxs"], tf.int32), [passage_num, para_limit, char_limit])
         ques_char_idxs = tf.reshape(tf.decode_raw(
-            features["ques_char_idxs"], tf.int32), [ques_limit, char_limit])
+            features["ques_char_idxs"], tf.int32), [passage_num, ques_limit, char_limit])
         y1 = tf.reshape(tf.decode_raw(
-            features["y1"], tf.float32), [para_limit])
+            features["y1"], tf.float32), [passage_num, para_limit])
         y2 = tf.reshape(tf.decode_raw(
-            features["y2"], tf.float32), [para_limit])
-        qa_id = features["id"]
-        return context_idxs, ques_idxs, context_char_idxs, ques_char_idxs, y1, y2, qa_id
+            features["y2"], tf.float32), [passage_num, para_limit])
+        qa_id = tf.tile(tf.expand_dims(features["id"], axis=0) , [passage_num])
+        is_select = tf.reshape(tf.decode_raw(
+            features["is_select"], tf.float32), [passage_num, 1]) 
+        return context_idxs, ques_idxs, context_char_idxs, ques_char_idxs, y1, y2, qa_id, is_select
     return parse
 
 
@@ -44,7 +48,7 @@ def get_batch_dataset(record_file, parser, config):
     if config.is_bucket:
         buckets = [tf.constant(num) for num in range(*config.bucket_range)]
 
-        def key_func(context_idxs, ques_idxs, context_char_idxs, ques_char_idxs, y1, y2, qa_id):
+        def key_func(context_idxs, ques_idxs, context_char_idxs, ques_char_idxs, y1, y2, qa_id, is_select):
             c_len = tf.reduce_sum(
                 tf.cast(tf.cast(context_idxs, tf.bool), tf.int32))
             buckets_min = [np.iinfo(np.int32).min] + buckets
@@ -59,8 +63,8 @@ def get_batch_dataset(record_file, parser, config):
 
         dataset = dataset.apply(tf.contrib.data.group_by_window(
             key_func, reduce_func, window_size=5 * config.batch_size)).shuffle(len(buckets) * 25)
-    else:
-        dataset = dataset.batch(config.batch_size)
+    #else:
+        #dataset = dataset.batch(config.batch_size)
     return dataset
 
 
@@ -71,16 +75,19 @@ def get_dataset(record_file, parser, config):
     return dataset
 
 
-def convert_tokens(eval_file, qa_id, pp1, pp2):
+def convert_tokens(eval_file, qa_id, pp1, pp2, yy1, yy2):
     answer_dict = {}
     remapped_dict = {}
-    for qid, p1, p2 in zip(qa_id, pp1, pp2):
+    for qid, p1, p2, y1, y2 in zip(qa_id, pp1, pp2, yy1, yy2):
         context = eval_file[str(qid)]["context"]
         spans = eval_file[str(qid)]["spans"]
         uuid = eval_file[str(qid)]["uuid"]
-
+        print('SPANS {0}'.format(len(spans)))
+        print('BEFORE CLIPPING== p1: {0}, p2: {1}'.format(p1,p2))
         p1 = max(0, min(p1, len(spans)-1))
         p2 = max(0, min(p2, len(spans)-1))
+        print('AFTER CLIPPING=== p1: {0}, p2: {1}'.format(p1,p2))
+        print('GROUND TRUTH==== y1: {0}, y2: {1}'.format(y1,y2))
 
         start_idx = spans[p1][0]
         end_idx = spans[p2][1]

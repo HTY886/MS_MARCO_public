@@ -7,7 +7,7 @@ class Model(object):
         self.config = config
         self.global_step = tf.get_variable('global_step', shape=[], dtype=tf.int32,
                                            initializer=tf.constant_initializer(0), trainable=False)
-        self.c, self.q, self.ch, self.qh, self.y1, self.y2, self.qa_id = batch.get_next()
+        self.c, self.q, self.ch, self.qh, self.y1, self.y2, self.qa_id, self.is_select= batch.get_next()
         self.is_train = tf.get_variable(
             "is_train", shape=[], dtype=tf.bool, trainable=False)
         self.word_mat = tf.get_variable("word_mat", initializer=tf.constant(
@@ -106,6 +106,7 @@ class Model(object):
             rnn = gru(num_layers=1, num_units=d, batch_size=N, input_size=self_att.get_shape(
             ).as_list()[-1], keep_prob=config.keep_prob, is_train=self.is_train)
             match = rnn(self_att, seq_len=self.c_len)
+            print(match)
 
         with tf.variable_scope("pointer"):
             init = summ(q[:, :, -2 * d:], d, mask=self.q_mask,
@@ -117,14 +118,21 @@ class Model(object):
         with tf.variable_scope("predict"):
             outer = tf.matmul(tf.expand_dims(tf.nn.softmax(logits1), axis=2),
                               tf.expand_dims(tf.nn.softmax(logits2), axis=1))
-            outer = tf.matrix_band_part(outer, 0, 15)
+            outer = tf.matrix_band_part(outer, 0, 30)
             self.yp1 = tf.argmax(tf.reduce_max(outer, axis=2), axis=1)
             self.yp2 = tf.argmax(tf.reduce_max(outer, axis=1), axis=1)
+            outer_un = tf.matmul(tf.expand_dims(logits1, axis=2),
+                              tf.expand_dims(logits2, axis=1))
+            outer_un = tf.matrix_band_part(outer_un, 0, 30)
+            logits3 = tf.reduce_max(tf.reduce_max(outer_un, axis=2), axis=1)
+            print(logits3)
             losses = tf.nn.softmax_cross_entropy_with_logits_v2(
                 logits=logits1, labels=tf.stop_gradient(self.y1))
             losses2 = tf.nn.softmax_cross_entropy_with_logits_v2(
                 logits=logits2, labels=tf.stop_gradient(self.y2))
-            self.loss = tf.reduce_mean(losses + losses2)
+            losses3 = tf.nn.softmax_cross_entropy_with_logits_v2(
+                logits=logits3, labels=tf.stop_gradient(tf.squeeze(self.is_select)))
+            self.loss = tf.reduce_mean(losses + losses2 + losses3)
 
     def get_loss(self):
         return self.loss

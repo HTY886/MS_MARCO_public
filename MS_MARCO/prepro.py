@@ -41,8 +41,9 @@ def process_file(filename, data_type, word_counter, char_counter):
         answers = source.get('answers', {})
 
         flat = ((qid, passages[qid], queries[qid], answers.get(qid)) for qid in query_ids)
+        q_num = len(source['query_id'])
 
-        organized, filtered_out = _organize(flat, 1, 1)
+        organized, filtered_out = _organize(flat, 0, q_num)
 
         for qid, passage, query, ans, position in tqdm(organized):
             context = passage['passage_text'].replace(
@@ -73,27 +74,35 @@ def process_file(filename, data_type, word_counter, char_counter):
             answer_end = position[-1]
             answer_texts.append(answer_text)
             answer_span = []
+            is_select = False
+            if answer_end - answer_start:
+                is_select = True
+                print('a {0} {1}'.format(answer_start, answer_end - answer_start))
 
             for idx, span in enumerate(spans):
                 if not (answer_end <= span[0] or answer_start >= span[1]):
                     answer_span.append(idx)
 
-            y1, y2 = answer_span[0], answer_span[-1]
+            if(len(answer_span)):
+                y1, y2 = answer_span[0], answer_span[-1]
+            else:
+                y1, y2 = 0, 0
+            
             y1s.append(y1)
             y2s.append(y2)
-
+            print(y1)
             example = {"context_tokens": context_tokens, "context_chars": context_chars, "ques_tokens": ques_tokens,
-                       "ques_chars": ques_chars, "y1s": y1s, "y2s": y2s, "id": int(qid)}
+                    "ques_chars": ques_chars, "y1s": y1s, "y2s": y2s, "id": int(qid), "is_select": is_select}
             examples.append(example)
             eval_examples[str(qid)] = {
                 "context": context, "spans": spans, "answers": answer_texts, "uuid": int(qid)}
-        random.shuffle(examples)
+        # random.shuffle(examples)
         print("{} questions in total".format(len(examples)))
     return examples, eval_examples
 
 
 # PASTED FROM MSMARCOV2/BidafBaseline/scripts/dataset.py
-def _organize(flat, span_only, answered_only):
+def _organize(flat, span_only, q_num):
     """
     Filter the queries and consolidate the answer as needed.
     """
@@ -101,39 +110,51 @@ def _organize(flat, span_only, answered_only):
 
     organized = []
 
+    total = q_num
+
     for qid, passages, query, answers in tqdm(flat):
-        if answers is None and not answered_only:
+
+        '''
+            for muli-p
+        '''
+
+        if len(passages) is not 10 or answers is None or answers[0] is "No Answer Present.":
             filtered_out.add(qid)
             continue  # Skip non-answered queries
-
+        
         matching = set()
-        for ans in answers:
-            if len(ans) == 0:
-                continue
-            for ind, passage in enumerate(passages):
-                pos = passage['passage_text'].find(ans)
-                if pos >= 0:
-                    matching.add(ind)
-                    organized.append((qid, passage, query, ans, (pos, pos+len(ans))))
-        # OK, found all spans.
-        if not span_only or not answered_only:
-            for ind, passage in enumerate(passages):
+
+        ans = answers[0]
+        
+        if len(ans) == 0:
+            continue
+        
+        for ind, passage in enumerate(passages):
+            pos = passage['passage_text'].find(ans)
+            if pos >= 0:
+                matching.add(ind)
+                organized.append((qid, passage, query, ans, (pos, pos+len(ans))))
+    
+            if not span_only:
                 if ind in matching:
                     continue
                 if passage.get('is_selected', False):
                     matching.add(ind)
-                    organized.append((qid, passage, query,(0, len(passage))))
-                elif not answered_only:
+                    organized.append((qid, passage, query, ans, (0, len(passage))))
+                else:
                     matching.add(ind)
-                    organized.append((qid, passage, query,(0, 0)))
+                    organized.append((qid, passage, query, ans, (0, 0)))
         # Went through the whole thing. If there's still not match, then it got
         # filtered out.
         if len(matching) == 0:
             filtered_out.add(qid)
+        if len(organized)> 0.1*total:
+            break
 
+    '''
     if len(filtered_out) > 0:
-        assert span_only or answered_only
-
+        assert span_only  
+    '''
     return organized, filtered_out
 
 
@@ -189,6 +210,7 @@ def build_features(config, examples, data_type, out_file, word2idx_dict, char2id
     total = 0
     total_ = 0
     meta = {}
+    qid_example_dict = {}
     for example in tqdm(examples):
         total_ += 1
 
@@ -202,6 +224,7 @@ def build_features(config, examples, data_type, out_file, word2idx_dict, char2id
         ques_char_idxs = np.zeros([ques_limit, char_limit], dtype=np.int32)
         y1 = np.zeros([para_limit], dtype=np.float32)
         y2 = np.zeros([para_limit], dtype=np.float32)
+        is_select = np.zeros([1], dtype=np.float32)
 
         def _get_word(word):
             for each in (word, word.lower(), word.capitalize(), word.upper()):
@@ -233,16 +256,51 @@ def build_features(config, examples, data_type, out_file, word2idx_dict, char2id
                 ques_char_idxs[i, j] = _get_char(char)
 
         start, end = example["y1s"][-1], example["y2s"][-1]
+        print(start)
         y1[start], y2[end] = 1.0, 1.0
 
+        if example["is_select"]:
+            is_select[0] = 1.0
+
+        q_id = example["id"]
+
+        if q_id not in qid_example_dict.keys():
+            qid_example_dict[q_id] = {"context_idxs":[], "ques_idxs":[], "context_char_idxs":[], "ques_char_idxs":[], "y1":[], "y2":[], "is_select":[], "count":0 }
+
+        qid_example_dict[q_id]["context_idxs"].append(context_idxs)
+        qid_example_dict[q_id]["ques_idxs"].append(ques_idxs)
+        qid_example_dict[q_id]["context_char_idxs"].append(context_char_idxs)
+        qid_example_dict[q_id]["ques_char_idxs"].append(ques_char_idxs)
+        qid_example_dict[q_id]["y1"].append(y1)
+        qid_example_dict[q_id]["y2"].append(y2)
+        qid_example_dict[q_id]["is_select"].append(is_select)
+        qid_example_dict[q_id]["count"]+= 1
+
+
+    for qid in tqdm(qid_example_dict.keys()):
+        
+        if qid_example_dict[q_id]["count"] is not config.passage_num:
+            continue
+
+        context_idxs_b = np.asarray(qid_example_dict[q_id]["context_idxs"])
+        ques_idxs_b = np.asarray(qid_example_dict[q_id]["ques_idxs"])
+        context_char_idxs_b =  np.asarray(qid_example_dict[q_id]["context_char_idxs"])
+        ques_char_idxs_b = np.asarray(qid_example_dict[q_id]["ques_char_idxs"])
+        y1_b = np.asarray(qid_example_dict[q_id]["y1"])
+        y2_b = np.asarray(qid_example_dict[q_id]["y2"])
+        print(y1_b)
+        print(y2_b)
+        is_select_b = np.asarray(qid_example_dict[q_id]["is_select"])
+        
         record = tf.train.Example(features=tf.train.Features(feature={
-                                  "context_idxs": tf.train.Feature(bytes_list=tf.train.BytesList(value=[context_idxs.tostring()])),
-                                  "ques_idxs": tf.train.Feature(bytes_list=tf.train.BytesList(value=[ques_idxs.tostring()])),
-                                  "context_char_idxs": tf.train.Feature(bytes_list=tf.train.BytesList(value=[context_char_idxs.tostring()])),
-                                  "ques_char_idxs": tf.train.Feature(bytes_list=tf.train.BytesList(value=[ques_char_idxs.tostring()])),
-                                  "y1": tf.train.Feature(bytes_list=tf.train.BytesList(value=[y1.tostring()])),
-                                  "y2": tf.train.Feature(bytes_list=tf.train.BytesList(value=[y2.tostring()])),
-                                  "id": tf.train.Feature(int64_list=tf.train.Int64List(value=[example["id"]]))
+                                  "context_idxs": tf.train.Feature(bytes_list=tf.train.BytesList(value=[context_idxs_b.tostring()])),
+                                  "ques_idxs": tf.train.Feature(bytes_list=tf.train.BytesList(value=[ques_idxs_b.tostring()])),
+                                  "context_char_idxs": tf.train.Feature(bytes_list=tf.train.BytesList(value=[context_char_idxs_b.tostring()])),
+                                  "ques_char_idxs": tf.train.Feature(bytes_list=tf.train.BytesList(value=[ques_char_idxs_b.tostring()])),
+                                  "y1": tf.train.Feature(bytes_list=tf.train.BytesList(value=[y1_b.tostring()])),
+                                  "y2": tf.train.Feature(bytes_list=tf.train.BytesList(value=[y2_b.tostring()])),
+                                  "is_select": tf.train.Feature(bytes_list=tf.train.BytesList(value=[is_select_b.tostring()])),
+                                  "id": tf.train.Feature(int64_list=tf.train.Int64List(value=[qid]))
                                   }))
         writer.write(record.SerializeToString())
     print("Build {} / {} instances of features in total".format(total, total_))

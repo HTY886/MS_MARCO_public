@@ -13,7 +13,7 @@ dev_file = os.path.join(home, "data", "MS_MARCO", "dev_v2.1.json")
 test_file = os.path.join(home, "data", "MS_MARCO", "dev_v2.1.json")
 glove_word_file = os.path.join(home, "data", "glove", "glove.840B.300d.txt")
 
-target_dir = "data"
+target_dir = "data_insert"
 log_dir = "log/event"
 save_dir = "log/model"
 answer_dir = "log/answer"
@@ -41,6 +41,7 @@ if not os.path.exists(answer_dir):
     os.makedirs(answer_dir)
 
 flags.DEFINE_string("mode", "train", "train/debug/test")
+flags.DEFINE_boolean("load", False, "Whether to load model")
 
 flags.DEFINE_string("target_dir", target_dir, "")
 flags.DEFINE_string("log_dir", log_dir, "")
@@ -79,22 +80,23 @@ flags.DEFINE_integer("char_limit", 16, "Limit length for character")
 flags.DEFINE_integer("word_count_limit", -1, "Min count for word")
 flags.DEFINE_integer("char_count_limit", -1, "Min count for char")
 
+flags.DEFINE_integer("passage_num", 10, "pasaage per query")
 flags.DEFINE_integer("capacity", 15000, "Batch size of dataset shuffle")
 flags.DEFINE_integer("num_threads", 4, "Number of threads in input pipeline")
 flags.DEFINE_boolean("use_cudnn", True, "Whether to use cudnn (only for GPU)")
 flags.DEFINE_boolean("is_bucket", False, "Whether to use bucketing")
 flags.DEFINE_list("bucket_range", [40, 361, 40], "range of bucket")
 
-flags.DEFINE_integer("batch_size", 64, "Batch size")
-flags.DEFINE_integer("num_steps", 60000, "Number of steps")
-flags.DEFINE_integer("checkpoint", 1000, "checkpoint for evaluation")
+flags.DEFINE_integer("batch_size", 10, "Batch size")
+flags.DEFINE_integer("num_steps", 360000, "Number of steps")
+flags.DEFINE_integer("checkpoint", 4000, "checkpoint for evaluation")
 flags.DEFINE_integer("period", 100, "period to save batch loss")
 flags.DEFINE_integer("val_num_batches", 150, "Num of batches for evaluation")
 flags.DEFINE_float("init_lr", 0.5, "Initial lr for Adadelta")
 flags.DEFINE_float("keep_prob", 0.7, "Keep prob in rnn")
 flags.DEFINE_float("ptr_keep_prob", 0.7, "Keep prob for pointer network")
 flags.DEFINE_float("grad_clip", 5.0, "Global Norm gradient clipping rate")
-flags.DEFINE_integer("hidden", 75, "Hidden size")
+flags.DEFINE_integer("hidden", 150, "Hidden size") #75 fpr hidden
 flags.DEFINE_integer("char_hidden", 100, "GRU dim for char")
 flags.DEFINE_integer("patience", 3, "Patience for lr decay")
 

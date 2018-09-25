@@ -25,7 +25,7 @@ def train(config):
     print("Building model...")
     parser = get_record_parser(config)
     train_dataset = get_batch_dataset(config.train_record_file, parser, config)
-    dev_dataset = get_dataset(config.dev_record_file, parser, config)
+    dev_dataset = get_batch_dataset(config.dev_record_file, parser, config)
     handle = tf.placeholder(tf.string, shape=[])
     iterator = tf.data.Iterator.from_string_handle(
         handle, train_dataset.output_types, train_dataset.output_shapes)
@@ -45,6 +45,9 @@ def train(config):
         writer = tf.summary.FileWriter(config.log_dir)
         sess.run(tf.global_variables_initializer())
         saver = tf.train.Saver()
+        if config.load: 
+            saver.restore(sess, tf.train.latest_checkpoint(config.save_dir))
+            print('loading model')
         train_handle = sess.run(train_iterator.string_handle())
         dev_handle = sess.run(dev_iterator.string_handle())
         sess.run(tf.assign(model.is_train, tf.constant(True, dtype=tf.bool)))
@@ -67,7 +70,7 @@ def train(config):
                     writer.add_summary(s, global_step)
 
                 metrics, summ = evaluate_batch(
-                    model, dev_total // config.batch_size + 1, dev_eval_file, sess, "dev", handle, dev_handle)
+                    model, dev_total , dev_eval_file, sess, "dev", handle, dev_handle)
                 sess.run(tf.assign(model.is_train,
                                    tf.constant(True, dtype=tf.bool)))
 
@@ -94,10 +97,12 @@ def evaluate_batch(model, num_batches, eval_file, sess, data_type, handle, str_h
     answer_dict = {}
     losses = []
     for _ in tqdm(range(1, num_batches + 1)):
-        qa_id, loss, yp1, yp2, = sess.run(
-            [model.qa_id, model.loss, model.yp1, model.yp2], feed_dict={handle: str_handle})
+        qa_id, loss, yp1, yp2, y1, y2= sess.run(
+            [model.qa_id, model.loss, model.yp1, model.yp2, model.y1, model.y2], feed_dict={handle: str_handle})
+        y1 = np.argmax(y1, axis=-1)
+        y2 = np.argmax(y2, axis=-1)
         answer_dict_, _ = convert_tokens(
-            eval_file, qa_id.tolist(), yp1.tolist(), yp2.tolist())
+            eval_file, qa_id.tolist(), yp1.tolist(), yp2.tolist(), y1.tolist(), y2.tolist())
         answer_dict.update(answer_dict_)
         losses.append(loss)
     loss = np.mean(losses)
@@ -142,10 +147,12 @@ def test(config):
         answer_dict = {}
         remapped_dict = {}
         for step in tqdm(range(total // config.batch_size + 1)):
-            qa_id, loss, yp1, yp2 = sess.run(
-                [model.qa_id, model.loss, model.yp1, model.yp2])
+            qa_id, loss, yp1, yp2 , y1, y2= sess.run(
+                [model.qa_id, model.loss, model.yp1, model.yp2, model.y1, model.y2])
+            y1 = np.argmax(y1, axis=-1)
+            y2 = np.argmax(y2, axis=-1)
             answer_dict_, remapped_dict_ = convert_tokens(
-                eval_file, qa_id.tolist(), yp1.tolist(), yp2.tolist())
+                eval_file, qa_id.tolist(), yp1.tolist(), yp2.tolist(), y1.tolist(), y2.tolist())
             answer_dict.update(answer_dict_)
             remapped_dict.update(remapped_dict_)
             losses.append(loss)

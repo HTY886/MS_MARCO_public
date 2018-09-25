@@ -2,4 +2,5 @@
 
 
 touch *.py
-python config.py --mode train
+python config.py --mode train --load True
+
