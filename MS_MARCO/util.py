@@ -3,7 +3,8 @@ import numpy as np
 import re
 from collections import Counter
 import string
-
+import jsonlines
+import os
 
 def get_record_parser(config, is_test=False):
     def parse(example):
@@ -19,6 +20,7 @@ def get_record_parser(config, is_test=False):
                                                "ques_char_idxs": tf.FixedLenFeature([], tf.string),
                                                "y1": tf.FixedLenFeature([], tf.string),
                                                "y2": tf.FixedLenFeature([], tf.string),
+                                               "in_answer": tf.FixedLenFeature([], tf.string),
                                                "is_select": tf.FixedLenFeature([], tf.string),
                                                "id": tf.FixedLenFeature([], tf.int64)
                                            })
@@ -37,7 +39,9 @@ def get_record_parser(config, is_test=False):
         qa_id = tf.tile(tf.expand_dims(features["id"], axis=0) , [passage_num])
         is_select = tf.reshape(tf.decode_raw(
             features["is_select"], tf.float32), [passage_num, 1]) 
-        return context_idxs, ques_idxs, context_char_idxs, ques_char_idxs, y1, y2, qa_id, is_select
+        in_answer = tf.reshape(tf.decode_raw(
+            features["in_answer"], tf.float32), [passage_num, para_limit])
+        return context_idxs, ques_idxs, context_char_idxs, ques_char_idxs, y1, y2, qa_id, is_select, in_answer
     return parse
 
 
@@ -45,6 +49,7 @@ def get_batch_dataset(record_file, parser, config):
     num_threads = tf.constant(config.num_threads, dtype=tf.int32)
     dataset = tf.data.TFRecordDataset(record_file).map(
         parser, num_parallel_calls=num_threads).shuffle(config.capacity).repeat()
+    '''
     if config.is_bucket:
         buckets = [tf.constant(num) for num in range(*config.bucket_range)]
 
@@ -63,15 +68,16 @@ def get_batch_dataset(record_file, parser, config):
 
         dataset = dataset.apply(tf.contrib.data.group_by_window(
             key_func, reduce_func, window_size=5 * config.batch_size)).shuffle(len(buckets) * 25)
-    #else:
-        #dataset = dataset.batch(config.batch_size)
+    else:
+        dataset = dataset.batch(config.batch_size)
+    '''
     return dataset
 
 
 def get_dataset(record_file, parser, config):
     num_threads = tf.constant(config.num_threads, dtype=tf.int32)
     dataset = tf.data.TFRecordDataset(record_file).map(
-        parser, num_parallel_calls=num_threads).repeat().batch(config.batch_size)
+        parser, num_parallel_calls=num_threads).repeat()
     return dataset
 
 
@@ -82,13 +88,15 @@ def convert_tokens(eval_file, qa_id, pp1, pp2, yy1, yy2):
         context = eval_file[str(qid)]["context"]
         spans = eval_file[str(qid)]["spans"]
         uuid = eval_file[str(qid)]["uuid"]
-        print('SPANS {0}'.format(len(spans)))
-        print('BEFORE CLIPPING== p1: {0}, p2: {1}'.format(p1,p2))
+        if y2:
+            print('SPANS {0}'.format(len(spans)))
+            print('BEFORE CLIPPING== p1: {0}, p2: {1}'.format(p1,p2))
         p1 = max(0, min(p1, len(spans)-1))
         p2 = max(0, min(p2, len(spans)-1))
-        print('AFTER CLIPPING=== p1: {0}, p2: {1}'.format(p1,p2))
-        print('GROUND TRUTH==== y1: {0}, y2: {1}'.format(y1,y2))
-
+        if y2:
+            print('AFTER CLIPPING=== p1: {0}, p2: {1}'.format(p1,p2))
+            print('GROUND TRUTH==== y1: {0}, y2: {1}'.format(y1,y2))
+        
         start_idx = spans[p1][0]
         end_idx = spans[p2][1]
         answer_dict[str(qid)] = context[start_idx: end_idx]
@@ -96,11 +104,15 @@ def convert_tokens(eval_file, qa_id, pp1, pp2, yy1, yy2):
     return answer_dict, remapped_dict
 
 
-def evaluate(eval_file, answer_dict):
+def evaluate(eval_file, answer_dict, filter=False):
     f1 = exact_match = total = 0
     for key, value in answer_dict.items():
-        total += 1
         ground_truths = eval_file[key]["answers"]
+
+        if filter and ground_truths[0].find("NoAnSweR")>=0 :
+            continue
+
+        total += 1
         prediction = value
         exact_match += metric_max_over_ground_truths(
             exact_match_score, prediction, ground_truths)
@@ -130,6 +142,8 @@ def normalize_answer(s):
 
 
 def f1_score(prediction, ground_truth):
+    print('prediction: {0}'.format(prediction))
+    print('ground-truth: {0}'.format(ground_truth))
     prediction_tokens = normalize_answer(prediction).split()
     ground_truth_tokens = normalize_answer(ground_truth).split()
     common = Counter(prediction_tokens) & Counter(ground_truth_tokens)
@@ -152,3 +166,13 @@ def metric_max_over_ground_truths(metric_fn, prediction, ground_truths):
         score = metric_fn(prediction, ground_truth)
         scores_for_ground_truths.append(score)
     return max(scores_for_ground_truths)
+
+def write_prediction(eval_file, answer_dict, file_name, config):
+    with jsonlines.open(os.path.join(config.answer_dir, 'ref.json'), mode='w') as writer1:
+        with jsonlines.open(os.path.join(config.answer_dir, file_name), mode='w') as writer2:
+            for key, values in answer_dict.items():
+                writer2.write({"query_id":key, "answers":[answer_dict[key]]})
+                writer1.write({"query_id":key, "answers":eval_file[key]["answers"]})
+            
+            
+

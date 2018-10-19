@@ -205,3 +205,12 @@ def dense(inputs, hidden, use_bias=True, scope="dense"):
             res = tf.nn.bias_add(res, b)
         res = tf.reshape(res, out_shape)
         return res
+
+def weighted_loss(config, NO_w, label, losses):
+    class_weights = tf.concat([tf.constant(NO_w, shape=(config.passage_num,1)),\
+            tf.ones_like(label)[:,1:]], axis=-1)
+    weights = tf.reduce_sum(class_weights*label, axis=1)
+    return losses*weights
+    
+
+

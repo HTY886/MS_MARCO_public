@@ -13,10 +13,10 @@ dev_file = os.path.join(home, "data", "MS_MARCO", "dev_v2.1.json")
 test_file = os.path.join(home, "data", "MS_MARCO", "dev_v2.1.json")
 glove_word_file = os.path.join(home, "data", "glove", "glove.840B.300d.txt")
 
-target_dir = "data_insert"
-log_dir = "log/event"
-save_dir = "log/model"
-answer_dir = "log/answer"
+target_dir = "data_c"
+log_dir = "log10/event"
+save_dir = "log10/model"
+answer_dir = "log10/answer"
 train_record_file = os.path.join(target_dir, "train.tfrecords")
 dev_record_file = os.path.join(target_dir, "dev.tfrecords")
 test_record_file = os.path.join(target_dir, "test.tfrecords")
@@ -26,6 +26,7 @@ train_eval = os.path.join(target_dir, "train_eval.json")
 dev_eval = os.path.join(target_dir, "dev_eval.json")
 test_eval = os.path.join(target_dir, "test_eval.json")
 dev_meta = os.path.join(target_dir, "dev_meta.json")
+train_meta = os.path.join(target_dir, "train_meta.json")
 test_meta = os.path.join(target_dir, "test_meta.json")
 word2idx_file = os.path.join(target_dir, "word2idx.json")
 char2idx_file = os.path.join(target_dir, "char2idx.json")
@@ -59,11 +60,13 @@ flags.DEFINE_string("char_emb_file", char_emb_file, "")
 flags.DEFINE_string("train_eval_file", train_eval, "")
 flags.DEFINE_string("dev_eval_file", dev_eval, "")
 flags.DEFINE_string("test_eval_file", test_eval, "")
+flags.DEFINE_string("train_meta", train_meta, "")
 flags.DEFINE_string("dev_meta", dev_meta, "")
 flags.DEFINE_string("test_meta", test_meta, "")
 flags.DEFINE_string("word2idx_file", word2idx_file, "")
 flags.DEFINE_string("char2idx_file", char2idx_file, "")
 flags.DEFINE_string("answer_file", answer_file, "")
+flags.DEFINE_string("answer_dir", answer_dir, "")
 
 
 flags.DEFINE_integer("glove_char_size", 94, "Corpus size for Glove")
@@ -89,14 +92,14 @@ flags.DEFINE_list("bucket_range", [40, 361, 40], "range of bucket")
 
 flags.DEFINE_integer("batch_size", 10, "Batch size")
 flags.DEFINE_integer("num_steps", 360000, "Number of steps")
-flags.DEFINE_integer("checkpoint", 4000, "checkpoint for evaluation")
+flags.DEFINE_integer("checkpoint", 5000, "checkpoint for evaluation")
 flags.DEFINE_integer("period", 100, "period to save batch loss")
 flags.DEFINE_integer("val_num_batches", 150, "Num of batches for evaluation")
-flags.DEFINE_float("init_lr", 0.5, "Initial lr for Adadelta")
-flags.DEFINE_float("keep_prob", 0.7, "Keep prob in rnn")
-flags.DEFINE_float("ptr_keep_prob", 0.7, "Keep prob for pointer network")
+flags.DEFINE_float("init_lr", 0.01, "Initial lr for Adadelta")
+flags.DEFINE_float("keep_prob", 0.9, "Keep prob in rnn")
+flags.DEFINE_float("ptr_keep_prob", 0.9, "Keep prob for pointer network")
 flags.DEFINE_float("grad_clip", 5.0, "Global Norm gradient clipping rate")
-flags.DEFINE_integer("hidden", 150, "Hidden size") #75 fpr hidden
+flags.DEFINE_integer("hidden", 150, "Hidden size") #75 fpr hidden, 150best for oracle
 flags.DEFINE_integer("char_hidden", 100, "GRU dim for char")
 flags.DEFINE_integer("patience", 3, "Patience for lr decay")
 

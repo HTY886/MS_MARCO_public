@@ -5,7 +5,7 @@ from tqdm import tqdm
 import os
 
 from model import Model
-from util import get_record_parser, convert_tokens, evaluate, get_batch_dataset, get_dataset
+from util import get_record_parser, convert_tokens, evaluate, get_batch_dataset, get_dataset, write_prediction
 
 
 def train(config):
@@ -20,7 +20,7 @@ def train(config):
     with open(config.dev_meta, "r") as fh:
         meta = json.load(fh)
 
-    dev_total = meta["total"]
+    dev_total = meta["num_batches"]
 
     print("Building model...")
     parser = get_record_parser(config)
@@ -28,7 +28,7 @@ def train(config):
     dev_dataset = get_batch_dataset(config.dev_record_file, parser, config)
     handle = tf.placeholder(tf.string, shape=[])
     iterator = tf.data.Iterator.from_string_handle(
-        handle, train_dataset.output_types, train_dataset.output_shapes)
+        handle, dev_dataset.output_types, dev_dataset.output_shapes)
     train_iterator = train_dataset.make_one_shot_iterator()
     dev_iterator = dev_dataset.make_one_shot_iterator()
 
@@ -55,26 +55,36 @@ def train(config):
 
         for _ in tqdm(range(1, config.num_steps + 1)):
             global_step = sess.run(model.global_step) + 1
-            loss, train_op = sess.run([model.loss, model.train_op], feed_dict={
+            loss, train_op, loss_dict, pse = sess.run([model.loss, model.train_op, model.loss_dict, model.pse_is_select], feed_dict={
                                       handle: train_handle})
+            
+            #print(pse)
             if global_step % config.period == 0:
                 loss_sum = tf.Summary(value=[tf.Summary.Value(
                     tag="model/loss", simple_value=loss), ])
                 writer.add_summary(loss_sum, global_step)
+                
+            
+                for loss_type in loss_dict.keys():
+                    loss_sum_d = tf.Summary(value=[tf.Summary.Value(
+                    tag="model/"+loss_type, simple_value=loss_dict[loss_type]), ])
+                    writer.add_summary(loss_sum_d, global_step)
+            
             if global_step % config.checkpoint == 0:
+                
                 sess.run(tf.assign(model.is_train,
                                    tf.constant(False, dtype=tf.bool)))
+                
                 _, summ = evaluate_batch(
                     model, config.val_num_batches, train_eval_file, sess, "train", handle, train_handle)
                 for s in summ:
                     writer.add_summary(s, global_step)
-
                 metrics, summ = evaluate_batch(
-                    model, dev_total , dev_eval_file, sess, "dev", handle, dev_handle)
+                    model, dev_total, dev_eval_file, sess, "dev", handle, dev_handle)
                 sess.run(tf.assign(model.is_train,
                                    tf.constant(True, dtype=tf.bool)))
-
                 dev_loss = metrics["loss"]
+                print('dev_loss {0}'.format(dev_loss))
                 if dev_loss < loss_save:
                     loss_save = dev_loss
                     patience = 0
@@ -91,30 +101,47 @@ def train(config):
                 filename = os.path.join(
                     config.save_dir, "model_{}.ckpt".format(global_step))
                 saver.save(sess, filename)
-
+            
 
 def evaluate_batch(model, num_batches, eval_file, sess, data_type, handle, str_handle):
     answer_dict = {}
     losses = []
-    for _ in tqdm(range(1, num_batches + 1)):
-        qa_id, loss, yp1, yp2, y1, y2= sess.run(
-            [model.qa_id, model.loss, model.yp1, model.yp2, model.y1, model.y2], feed_dict={handle: str_handle})
+    for _ in tqdm(range(1, num_batches+1 )):
+        try:
+            qa_id, loss, yp1, yp2, y1, y2, is_select_p= sess.run(
+            [model.qa_id, model.loss, model.yp1, model.yp2, model.y1, model.y2, model.is_select_p], feed_dict={handle: str_handle})
+        
+        except tf.errors.OutOfRangeError:
+            break
+
         y1 = np.argmax(y1, axis=-1)
         y2 = np.argmax(y2, axis=-1)
+        sp = np.argmax(is_select_p)
+
         answer_dict_, _ = convert_tokens(
-            eval_file, qa_id.tolist(), yp1.tolist(), yp2.tolist(), y1.tolist(), y2.tolist())
+            eval_file, [qa_id[sp]], [yp1[sp]], [yp2[sp]], [y1[sp]], [y2[sp]])
         answer_dict.update(answer_dict_)
         losses.append(loss)
     loss = np.mean(losses)
-    metrics = evaluate(eval_file, answer_dict)
+    metrics = evaluate(eval_file, answer_dict, filter=False)
+    sp_metrics = evaluate(eval_file, answer_dict, filter=True)
+
     metrics["loss"] = loss
+
+
     loss_sum = tf.Summary(value=[tf.Summary.Value(
         tag="{}/loss".format(data_type), simple_value=metrics["loss"]), ])
     f1_sum = tf.Summary(value=[tf.Summary.Value(
         tag="{}/f1".format(data_type), simple_value=metrics["f1"]), ])
     em_sum = tf.Summary(value=[tf.Summary.Value(
         tag="{}/em".format(data_type), simple_value=metrics["exact_match"]), ])
-    return metrics, [loss_sum, f1_sum, em_sum]
+    
+    sp_f1_sum = tf.Summary(value=[tf.Summary.Value(
+        tag="{}/sp_f1".format(data_type), simple_value=sp_metrics["f1"]), ])
+    sp_em_sum = tf.Summary(value=[tf.Summary.Value(
+        tag="{}/sp_em".format(data_type), simple_value=sp_metrics["exact_match"]), ])
+   
+    return metrics, [loss_sum, f1_sum, em_sum, sp_f1_sum, sp_em_sum]
 
 
 def test(config):
@@ -127,7 +154,7 @@ def test(config):
     with open(config.test_meta, "r") as fh:
         meta = json.load(fh)
 
-    total = meta["total"]
+    total = meta["num_batches"]
 
     print("Loading model...")
     test_batch = get_dataset(config.test_record_file, get_record_parser(
@@ -146,19 +173,28 @@ def test(config):
         losses = []
         answer_dict = {}
         remapped_dict = {}
-        for step in tqdm(range(total // config.batch_size + 1)):
-            qa_id, loss, yp1, yp2 , y1, y2= sess.run(
-                [model.qa_id, model.loss, model.yp1, model.yp2, model.y1, model.y2])
+        select_right = []
+        for step in tqdm(range(1, total + 1)):
+            qa_id, loss, yp1, yp2 , y1, y2, is_select_p, is_select= sess.run(
+                [model.qa_id, model.loss, model.yp1, model.yp2, model.y1, model.y2, model.is_select_p, model.is_select])
             y1 = np.argmax(y1, axis=-1)
             y2 = np.argmax(y2, axis=-1)
+            sp = np.argmax(is_select_p)
+            s = np.argmax(is_select)
+            select_right.append(float(sp==s))
+
             answer_dict_, remapped_dict_ = convert_tokens(
-                eval_file, qa_id.tolist(), yp1.tolist(), yp2.tolist(), y1.tolist(), y2.tolist())
+                eval_file, [qa_id[sp]], [yp1[sp]], [yp2[sp]], [y1[sp]], [y2[sp]])
             answer_dict.update(answer_dict_)
             remapped_dict.update(remapped_dict_)
             losses.append(loss)
         loss = np.mean(losses)
-        metrics = evaluate(eval_file, answer_dict)
+        select_accu = sum(select_right)/ len(select_right)
+        write_prediction(eval_file, answer_dict, 'answer_for_evl.json', config)
+        metrics = evaluate(eval_file, answer_dict, filter=False)
+        metrics['Selection Accuracy'] = select_accu
+        
         with open(config.answer_file, "w") as fh:
             json.dump(remapped_dict, fh)
-        print("Exact Match: {}, F1: {}".format(
-            metrics['exact_match'], metrics['f1']))
+        print("Exact Match: {}, F1: {}, selection accuracy: {}".format(
+            metrics['exact_match'], metrics['f1'], metrics['Selection Accuracy']))
