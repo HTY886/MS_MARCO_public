@@ -76,11 +76,11 @@ def train(config):
                                    tf.constant(False, dtype=tf.bool)))
                 
                 _, summ = evaluate_batch(
-                    model, config.val_num_batches, train_eval_file, sess, "train", handle, train_handle)
+                    config, model, config.val_num_batches, train_eval_file, sess, "train", handle, train_handle)
                 for s in summ:
                     writer.add_summary(s, global_step)
                 metrics, summ = evaluate_batch(
-                    model, dev_total, dev_eval_file, sess, "dev", handle, dev_handle)
+                    config, model, int(dev_total*config.passage_num/config.batch_size), dev_eval_file, sess, "dev", handle, dev_handle)
                 sess.run(tf.assign(model.is_train,
                                    tf.constant(True, dtype=tf.bool)))
                 dev_loss = metrics["loss"]
@@ -103,34 +103,39 @@ def train(config):
                 saver.save(sess, filename)
             
 
-def evaluate_batch(model, num_batches, eval_file, sess, data_type, handle, str_handle):
+def evaluate_batch(config, model, num_batches, eval_file, sess, data_type, handle, str_handle):
     answer_dict = {}
+    remapped_dict = {}
     losses = []
     for _ in tqdm(range(1, num_batches+1 )):
-        try:
-            qa_id, loss, yp1, yp2, y1, y2, is_select_p= sess.run(
-            [model.qa_id, model.loss, model.yp1, model.yp2, model.y1, model.y2, model.is_select_p], feed_dict={handle: str_handle})
-        
+        try:    
+            qa_id, loss, yp1, yp2 , y1, y2, is_select_p, is_select= sess.run(
+                    [model.qa_id, model.loss, model.yp1, model.yp2, model.y1, model.y2, model.is_select_p, model.is_select], feed_dict={ handle:str_handle })
         except tf.errors.OutOfRangeError:
             break
 
         y1 = np.argmax(y1, axis=-1)
         y2 = np.argmax(y2, axis=-1)
-        sp = np.argmax(is_select_p)
+        sp = np.argmax(is_select_p, axis=-1)
+        s = np.argmax(is_select, axis=-1)
+        sp = [ n+i*config.passage_num for i,n in enumerate(sp.tolist()) ]
+        s = [ m+i*config.passage_num for i,m in enumerate(s.tolist()) ]
 
-        answer_dict_, _ = convert_tokens(
-            eval_file, [qa_id[sp]], [yp1[sp]], [yp2[sp]], [y1[sp]], [y2[sp]])
+        answer_dict_, remapped_dict_ = convert_tokens(
+            eval_file, [qa_id[n] for n in sp], [yp1[n] for n in sp], [yp2[n] for n in sp], [y1[n] for n in sp], [y2[n] for n in sp], sp, s)
+
         answer_dict.update(answer_dict_)
+        remapped_dict.update(remapped_dict_)
         losses.append(loss)
     loss = np.mean(losses)
     metrics = evaluate(eval_file, answer_dict, filter=False)
-    sp_metrics = evaluate(eval_file, answer_dict, filter=True)
+    sp_metrics = evaluate(eval_file, remapped_dict, filter=False)
 
     metrics["loss"] = loss
 
-
     loss_sum = tf.Summary(value=[tf.Summary.Value(
         tag="{}/loss".format(data_type), simple_value=metrics["loss"]), ])
+
     f1_sum = tf.Summary(value=[tf.Summary.Value(
         tag="{}/f1".format(data_type), simple_value=metrics["f1"]), ])
     em_sum = tf.Summary(value=[tf.Summary.Value(
@@ -157,8 +162,8 @@ def test(config):
     total = meta["num_batches"]
 
     print("Loading model...")
-    test_batch = get_dataset(config.test_record_file, get_record_parser(
-        config, is_test=True), config).make_one_shot_iterator()
+    test_batch = get_batch_dataset(config.test_record_file, get_record_parser(
+        config, is_test=True), config, is_test=True).make_one_shot_iterator()
 
     model = Model(config, test_batch, word_mat, char_mat, trainable=False)
 
@@ -172,29 +177,27 @@ def test(config):
         sess.run(tf.assign(model.is_train, tf.constant(False, dtype=tf.bool)))
         losses = []
         answer_dict = {}
-        remapped_dict = {}
         select_right = []
         for step in tqdm(range(1, total + 1)):
             qa_id, loss, yp1, yp2 , y1, y2, is_select_p, is_select= sess.run(
                 [model.qa_id, model.loss, model.yp1, model.yp2, model.y1, model.y2, model.is_select_p, model.is_select])
             y1 = np.argmax(y1, axis=-1)
             y2 = np.argmax(y2, axis=-1)
-            sp = np.argmax(is_select_p)
-            s = np.argmax(is_select)
-            select_right.append(float(sp==s))
+            sp = np.argmax(is_select_p, axis=-1)
+            s = np.argmax(is_select, axis=-1)
+            sp = [ n+i*config.passage_num for i,n in enumerate(sp.tolist()) ]
+            s = [ m+i*config.passage_num for i,m in enumerate(s.tolist()) ]
+            select_right.append(len(set(s).intersection(set(sp))))
 
-            answer_dict_, remapped_dict_ = convert_tokens(
-                eval_file, [qa_id[sp]], [yp1[sp]], [yp2[sp]], [y1[sp]], [y2[sp]])
+            answer_dict_, _ = convert_tokens(
+                eval_file, [qa_id[n] for n in sp], [yp1[n] for n in sp], [yp2[n] for n in sp], [y1[n] for n in sp], [y2[n] for n in sp], sp, s)
             answer_dict.update(answer_dict_)
-            remapped_dict.update(remapped_dict_)
             losses.append(loss)
         loss = np.mean(losses)
-        select_accu = sum(select_right)/ len(select_right)
+        select_accu = sum(select_right)/ (len(select_right)*(config.batch_size/config.passage_num))
         write_prediction(eval_file, answer_dict, 'answer_for_evl.json', config)
         metrics = evaluate(eval_file, answer_dict, filter=False)
         metrics['Selection Accuracy'] = select_accu
         
-        with open(config.answer_file, "w") as fh:
-            json.dump(remapped_dict, fh)
         print("Exact Match: {}, F1: {}, selection accuracy: {}".format(
             metrics['exact_match'], metrics['f1'], metrics['Selection Accuracy']))

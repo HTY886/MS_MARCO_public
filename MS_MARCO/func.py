@@ -207,10 +207,40 @@ def dense(inputs, hidden, use_bias=True, scope="dense"):
         return res
 
 def weighted_loss(config, NO_w, label, losses):
-    class_weights = tf.concat([tf.constant(NO_w, shape=(config.passage_num,1)),\
+    class_weights = tf.concat([tf.constant(NO_w, shape=(config.batch_size,1)),\
             tf.ones_like(label)[:,1:]], axis=-1)
     weights = tf.reduce_sum(class_weights*label, axis=1)
     return losses*weights
     
 
+def content_model(init, match, hidden):
+    
+    conv0 = tf.concat((match, tf.multiply(tf.expand_dims(init, axis=1),tf.ones_like(match))), axis=-1)
+    conv1 = tf.layers.conv2d(
+        inputs = tf.expand_dims(conv0, axis=2),
+        filters = 2*hidden, #150
+        kernel_size = (5,1), #(3,1)
+        padding = 'same',
+        activation = tf.nn.leaky_relu
+        )              
+    conv2 = tf.layers.conv2d(
+        inputs = conv1,
+        filters = hidden, #75
+        kernel_size = (3,1),
+        padding = 'same',
+        activation = tf.nn.leaky_relu
+        )
+    conv3 = tf.layers.conv2d(
+        inputs = conv2,
+        filters = 1,
+        kernel_size = (1,1),
+        padding = 'same',
+        activation = None
+        )
+    logits4 = tf.squeeze(conv3)
 
+    c_semantics = tf.reduce_mean(
+            match*tf.tile(tf.expand_dims(logits4, axis=-1), [1,1, 2*hidden]),
+            axis = 1)
+
+    return logits4, c_semantics

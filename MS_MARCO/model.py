@@ -1,5 +1,5 @@
 import tensorflow as tf
-from func import cudnn_gru, native_gru, dot_attention, summ, dropout, ptr_net, weighted_loss
+from func import cudnn_gru, native_gru, dot_attention, summ, dropout, ptr_net, weighted_loss, content_model
 
 
 class Model(object):
@@ -11,7 +11,7 @@ class Model(object):
         self.is_train = tf.get_variable(
             "is_train", shape=[], dtype=tf.bool, trainable=False)
         self.word_mat = tf.get_variable("word_mat", initializer=tf.constant(
-            word_mat, dtype=tf.float32), trainable=False)
+            word_mat, dtype=tf.float32), trainable=True)  
         self.char_mat = tf.get_variable(
             "char_mat", initializer=tf.constant(char_mat, dtype=tf.float32))
 
@@ -117,54 +117,32 @@ class Model(object):
 
         with tf.variable_scope("content_modeling"):
 
-            conv0 = tf.concat((match, tf.multiply(tf.expand_dims(init, axis=1),tf.ones_like(match))), axis=-1)
-            conv1 = tf.layers.conv2d(
-                inputs = tf.expand_dims(conv0, axis=2),
-                filters = 2*config.hidden, #150
-                kernel_size = (5,1), #(3,1)
-                padding = 'same',
-                activation = tf.nn.leaky_relu
-                )              
-            conv2 = tf.layers.conv2d(
-                inputs = conv1,
-                filters = config.hidden, #75
-                kernel_size = (3,1),
-                padding = 'same',
-                activation = tf.nn.leaky_relu
-                )
-            conv3 = tf.layers.conv2d(
-                inputs = conv2,
-                filters = 1,
-                kernel_size = (1,1),
-                padding = 'same',
-                activation = None
-                )
-            logits4 = tf.squeeze(conv3)
-
-            c_semantics = tf.reduce_mean(
-                    match*tf.tile(tf.expand_dims(logits4, axis=-1), [1,1, 2*config.hidden]),
-                    axis = 1)
+            logits4, c_semantics = content_model(init, match, config.hidden)
 
         with tf.variable_scope("cross_passage_attention"):
-            attnc_key = tf.tile(tf.expand_dims(c_semantics, axis=1), [1,config.passage_num,1])
-            attnc_mem = tf.tile(tf.expand_dims(c_semantics, axis=0), [config.passage_num,1,1])
+            self.query_num = int(config.batch_size/config.passage_num)
+            c_semantics = tf.reshape(c_semantics, shape=[self.query_num, config.passage_num, -1])
+            attnc_key = tf.tile(tf.expand_dims(c_semantics, axis=2), [1, 1, config.passage_num, 1])
+            attnc_mem = tf.tile(tf.expand_dims(c_semantics, axis=1), [1, config.passage_num, 1, 1])
             attnc_w = tf.reduce_sum(attnc_key*attnc_mem, axis=-1)
             attnc_mask = tf.ones([config.passage_num, config.passage_num])-tf.diag([1.0]*config.passage_num)
             attnc_w = tf.nn.softmax(attnc_w*attnc_mask, axis=-1)
-            attncp = tf.reduce_sum(tf.tile(tf.expand_dims(attnc_w, axis=-1), [1,1, 2*config.hidden])*attnc_mem, axis= 1)
+            attncp = tf.reduce_sum(tf.tile(tf.expand_dims(attnc_w, axis=-1), [1, 1, 1, 2*config.hidden])*attnc_mem, axis= 2)
         
         
         with tf.variable_scope("pseudo_label"):
-            self.is_select = tf.squeeze(self.is_select)/tf.reduce_sum(self.is_select)
+            self.is_select = tf.reshape(tf.squeeze(self.is_select), shape=[self.query_num, config.passage_num])
+            self.is_select = self.is_select/tf.tile(tf.reduce_sum(self.is_select, axis=-1, keepdims=True), [1, config.passage_num])
             sim_matrix = attnc_w
-            lb_matrix = tf.tile(tf.expand_dims(self.is_select, axis=0), [config.passage_num, 1])
+            lb_matrix = tf.tile(tf.expand_dims(self.is_select, axis=1), [1, config.passage_num, 1])
             self.pse_is_select = tf.reduce_sum(sim_matrix*lb_matrix, axis=-1) + tf.constant([0.00000001]*config.passage_num, dtype=tf.float32)    # avoid all zero
-            self.pse_is_select = self.pse_is_select/tf.reduce_sum(self.pse_is_select)
+            self.pse_is_select = self.pse_is_select/tf.tile(tf.reduce_sum(self.pse_is_select, axis=-1, keepdims=True), [1,config.passage_num])
             alpha = 0.7
             self.fuse_label = alpha*self.is_select + (1-alpha)*tf.stop_gradient(self.pse_is_select)
         
 
         with tf.variable_scope("predict_passage"):
+            init = tf.reshape(init, shape=[self.query_num, config.passage_num, -1])
             attn_concat = tf.concat([init, attncp, c_semantics], axis=-1)
             d1 = tf.layers.dense(attn_concat, 2*config.hidden, activation= tf.nn.leaky_relu, bias_initializer= tf.glorot_uniform_initializer()) #150
             d2 = tf.layers.dense(d1, config.hidden, activation= tf.nn.leaky_relu, bias_initializer= tf.glorot_uniform_initializer()) #75
@@ -184,23 +162,23 @@ class Model(object):
             losses2 = tf.nn.softmax_cross_entropy_with_logits_v2(
                 logits=logits2, labels=tf.stop_gradient(self.y2))
            
-            weighted_losses = weighted_loss(config, 0.01, self.y1, losses) #0.01
-            weighted_losses2 = weighted_loss(config, 0.01, self.y2, losses2) #0.01
-            '''
-            losses3 = tf.reduce_sum(tf.nn.sigmoid_cross_entropy_with_logits(
-                logits=logits3, labels=tf.stop_gradient(tf.squeeze(self.is_select))), axis=0)
-            '''
-            losses3 = tf.nn.softmax_cross_entropy_with_logits_v2(
-                logits=logits3, labels=tf.stop_gradient(self.fuse_label))
+            weighted_losses = weighted_loss(config, 0.000001, self.y1, losses) #0.01
+            weighted_losses2 = weighted_loss(config, 0.000001, self.y2, losses2) #0.01
+            
+            losses3 = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(
+                logits=logits3, labels=tf.stop_gradient(self.fuse_label)))
+            
+            in_answer_weight = tf.ones_like(self.in_answer) + 3*self.in_answer
             
             losses4 = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
-                logits=logits4, labels=tf.stop_gradient(self.in_answer)), axis=-1)
+                logits=logits4, labels=tf.stop_gradient(self.in_answer))*in_answer_weight, axis=-1)
 
-            weighted_losses4 = weighted_loss(config, 0.05, self.in_answer, losses4)
+            weighted_losses4 = weighted_loss(config, 0.000001, self.in_answer, losses4)
+            
             self.loss_dict = {'pos_s loss':losses, 'pos_e loss':losses2, 'select loss':losses3, 'in answer':losses4}
             for key, values in self.loss_dict.items():
                 self.loss_dict[key] = tf.reduce_mean(values)
-            #self.loss = tf.reduce_mean(losses + losses2 + 0.0001*losses3)
+            
             self.loss = tf.reduce_mean(weighted_losses + weighted_losses2 + losses3+ weighted_losses4)
 
     def get_loss(self):

@@ -45,10 +45,33 @@ def get_record_parser(config, is_test=False):
     return parse
 
 
-def get_batch_dataset(record_file, parser, config):
+def get_batch_dataset(record_file, parser, config, is_test =False):
     num_threads = tf.constant(config.num_threads, dtype=tf.int32)
     dataset = tf.data.TFRecordDataset(record_file).map(
         parser, num_parallel_calls=num_threads).shuffle(config.capacity).repeat()
+    
+    if config.is_group:
+        assert(config.batch_size%config.passage_num==0)
+
+        def concat_func(context_idxs, ques_idxs, context_char_idxs, ques_char_idxs, y1, y2, qa_id, is_select, in_answer):
+            query_num = int(config.batch_size/config.passage_num)
+            passage_num = config.passage_num
+            para_limit = config.test_para_limit if is_test else config.para_limit
+            ques_limit = config.test_ques_limit if is_test else config.ques_limit
+            char_limit = config.char_limit
+            context_idxs = tf.reshape(context_idxs, shape=[query_num*passage_num, para_limit])
+            ques_idxs = tf.reshape(ques_idxs, shape=[query_num*passage_num, ques_limit])
+            context_char_idxs = tf.reshape(context_char_idxs, shape=[query_num*passage_num, para_limit, char_limit])
+            ques_char_idxs = tf.reshape(ques_char_idxs, shape=[query_num*passage_num, ques_limit, char_limit])
+            y1 = tf.reshape(y1, shape=[query_num*passage_num, para_limit])
+            y2 = tf.reshape(y2, shape=[query_num*passage_num, para_limit])
+            qa_id = tf.reshape(qa_id, shape=[query_num*passage_num])
+            is_select = tf.reshape(is_select, shape= [query_num*passage_num, 1]) 
+            in_answer = tf.reshape(in_answer, shape=[query_num*passage_num, para_limit])
+
+            return context_idxs, ques_idxs, context_char_idxs, ques_char_idxs, y1, y2, qa_id, is_select, in_answer
+        dataset = dataset.batch(int(config.batch_size/config.passage_num)).map(concat_func)
+
     '''
     if config.is_bucket:
         buckets = [tf.constant(num) for num in range(*config.bucket_range)]
@@ -81,26 +104,27 @@ def get_dataset(record_file, parser, config):
     return dataset
 
 
-def convert_tokens(eval_file, qa_id, pp1, pp2, yy1, yy2):
+def convert_tokens(eval_file, qa_id, pp1, pp2, yy1, yy2, ssp, ss):
     answer_dict = {}
     remapped_dict = {}
-    for qid, p1, p2, y1, y2 in zip(qa_id, pp1, pp2, yy1, yy2):
-        context = eval_file[str(qid)]["context"]
-        spans = eval_file[str(qid)]["spans"]
-        uuid = eval_file[str(qid)]["uuid"]
-        if y2:
-            print('SPANS {0}'.format(len(spans)))
-            print('BEFORE CLIPPING== p1: {0}, p2: {1}'.format(p1,p2))
+    for qid, p1, p2, y1, y2, sp, s in zip(qa_id, pp1, pp2, yy1, yy2, ssp, ss):
+        qid = str(qid)+'P'+str(sp%10) #
+        context = eval_file[qid]["context"]
+        spans = eval_file[qid]["spans"]
+        uuid = eval_file[qid]["uuid"]
         p1 = max(0, min(p1, len(spans)-1))
         p2 = max(0, min(p2, len(spans)-1))
         if y2:
+            print("************qa_id: {}***************".format(qid))
+            print("select_right: {}".format(str(sp == s)))
             print('AFTER CLIPPING=== p1: {0}, p2: {1}'.format(p1,p2))
             print('GROUND TRUTH==== y1: {0}, y2: {1}'.format(y1,y2))
         
         start_idx = spans[p1][0]
         end_idx = spans[p2][1]
-        answer_dict[str(qid)] = context[start_idx: end_idx]
-        remapped_dict[uuid] = context[start_idx: end_idx]
+        answer_dict[qid] = context[start_idx: end_idx]
+        if sp == s: 
+            remapped_dict[qid] = context[start_idx: end_idx]
     return answer_dict, remapped_dict
 
 
@@ -109,7 +133,7 @@ def evaluate(eval_file, answer_dict, filter=False):
     for key, value in answer_dict.items():
         ground_truths = eval_file[key]["answers"]
 
-        if filter and ground_truths[0].find("NoAnSweR")>=0 :
+        if filter and prediction.find("NoAnSweR")>=0 :
             continue
 
         total += 1

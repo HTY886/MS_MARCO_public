@@ -13,10 +13,10 @@ dev_file = os.path.join(home, "data", "MS_MARCO", "dev_v2.1.json")
 test_file = os.path.join(home, "data", "MS_MARCO", "dev_v2.1.json")
 glove_word_file = os.path.join(home, "data", "glove", "glove.840B.300d.txt")
 
-target_dir = "data_fasttext_emb01/"
-log_dir = "log15/event"
-save_dir = "log15/model"
-answer_dir = "log15/answer"
+target_dir = "data_glove_emb01"
+log_dir = "log16/event"
+save_dir = "log16/model"
+answer_dir = "log16/answer"
 train_record_file = os.path.join(target_dir, "train.tfrecords")
 dev_record_file = os.path.join(target_dir, "dev.tfrecords")
 test_record_file = os.path.join(target_dir, "test.tfrecords")
@@ -92,7 +92,7 @@ flags.DEFINE_boolean("is_group", True, "Whether to group different guery set")
 flags.DEFINE_list("bucket_range", [40, 361, 40], "range of bucket")
 
 flags.DEFINE_integer("batch_size", 50, "Batch size")
-flags.DEFINE_integer("num_steps", 60000, "Number of steps")
+flags.DEFINE_integer("num_steps", 90000, "Number of steps")
 flags.DEFINE_integer("checkpoint", 5000, "checkpoint for evaluation")
 flags.DEFINE_integer("period", 300, "period to save batch loss")
 flags.DEFINE_integer("val_num_batches", 150, "Num of batches for evaluation")
@@ -100,8 +100,8 @@ flags.DEFINE_float("init_lr", 0.01, "Initial lr for Adadelta")
 flags.DEFINE_float("keep_prob", 0.9, "Keep prob in rnn")
 flags.DEFINE_float("ptr_keep_prob", 0.9, "Keep prob for pointer network")
 flags.DEFINE_float("grad_clip", 5.0, "Global Norm gradient clipping rate")
-flags.DEFINE_integer("hidden", 300, "Hidden size") #75 fpr hidden, 150best for oracle
-flags.DEFINE_integer("char_hidden", 100, "GRU dim for char")
+flags.DEFINE_integer("hidden", 256, "Hidden size") #75 fpr hidden, 150best for oracle
+flags.DEFINE_integer("char_hidden", 120, "GRU dim for char")
 flags.DEFINE_integer("patience", 3, "Patience for lr decay")
 
 # Extensions (Uncomment corresponding line in download.sh to download the required data)
