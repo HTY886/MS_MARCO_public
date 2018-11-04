@@ -58,7 +58,7 @@ on `corpus_for_emb` with dims=300
 
 ## Experiments
 
-|dataset|word-embedding|hidden-dims|bleu-1|rouge-l]
+|dataset|word-embedding|hidden-dims|bleu-1|rouge-l|
 |---|---|---|---|---|
 |subset of dev-set w/ target span|GloVe w/ OOV|150|0.293|0.317|
 |subset of dev-set w/ target span|Fasttext|256|0.299|0.270|
