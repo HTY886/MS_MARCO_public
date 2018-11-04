@@ -1,6 +1,6 @@
 # MS_MARCO_public
   * Work in progress
-  * A Tensorflow implementation of S-Net-like model on [MS MARCO](http://www.msmarco.org/) dataset based on [R-NET: MACHINE READING COMPREHENSION WITH SELF-MATCHING NETWORKS](https://www.microsoft.com/en-us/research/wp-content/uploads/2017/05/r-net.pdf) and [V-Net](https://arxiv.org/abs/1805.02220)
+  * A Tensorflow implementation of S-Net-like(-to-be) model on [MS MARCO](http://www.msmarco.org/) dataset based on [R-NET: MACHINE READING COMPREHENSION WITH SELF-MATCHING NETWORKS](https://www.microsoft.com/en-us/research/wp-content/uploads/2017/05/r-net.pdf) and [V-Net](https://arxiv.org/abs/1805.02220)
  
 ## Requirements
 
