@@ -58,12 +58,12 @@ on `corpus_for_emb` with dims=300
 
 ## Experiments
 
-|dataset|word-embedding|hidden-dims|bleu-1|rouge-l|
-|---|---|---|---|---|
-|subset of dev-set w/ target span|GloVe w/ OOV|150|0.293|0.317|
-|subset of dev-set w/ target span|Fasttext|256|0.299|0.270|
-|subset of dev-set w/ answer|Fasttext|256|0.270|0.267|
-|subset of dev-set w/ answer|Fasttext|300|||
-|subset of dev-set w/ answer|GloVe w/ OOV|256|0.251|0.252|
+|dataset|size of train-set|word-embedding|hidden-dims|bleu-1|rouge-l|
+|---|---|---|---|---|---|
+|subset of dev-set w/ target span|1.3M|GloVe w/ OOV|150|0.293|0.317|
+|subset of dev-set w/ target span|1.3M|Fasttext|256|0.299|0.270|
+|subset of dev-set w/ answer|1.3M|Fasttext|256|0.270|0.267|
+|subset of dev-set w/ answer|1.3M|Fasttext|300|||
+|subset of dev-set w/ answer|2.1M|GloVe w/ OOV|256|0.251|0.252|
 
 
