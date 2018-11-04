@@ -13,10 +13,10 @@ dev_file = os.path.join(home, "data", "MS_MARCO", "dev_v2.1.json")
 test_file = os.path.join(home, "data", "MS_MARCO", "dev_v2.1.json")
 glove_word_file = os.path.join(home, "data", "glove", "glove.840B.300d.txt")
 
-target_dir = "data_fasttext_emb01/"
-log_dir = "log15/event"
-save_dir = "log15/model"
-answer_dir = "log15/answer"
+target_dir = "data/"
+log_dir = "log/event"
+save_dir = "log/model"
+answer_dir = "log/answer"
 train_record_file = os.path.join(target_dir, "train.tfrecords")
 dev_record_file = os.path.join(target_dir, "dev.tfrecords")
 test_record_file = os.path.join(target_dir, "test.tfrecords")
