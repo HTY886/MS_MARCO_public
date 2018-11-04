@@ -1,0 +1,15 @@
+MS_MARCO/log*
+MS_MARCO/log
+MS_MARCO/data*
+MS_MARCO/data
+MS_MARCO/__pycache__/*
+MS_MARCO/__pycache__/
+MS_MARCO/*.py[cod]
+MS_MARCO/*$py.class
+MS_MARCO/*.txt
+MS_MARCO/t*.sh
+MS_MARCO/p*.sh
+MS_MARCO/corpus*
+MS_MARCO/fasttext*
+MS_MARCO/inference.py
+MS_MARCO/img

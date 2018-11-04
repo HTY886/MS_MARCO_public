@@ -2,12 +2,14 @@ log*
 log
 data*
 data
+__pycache__/*
 __pycache__/
 *.py[cod]
 *$py.class
 *.txt
-*.sh
+t*.sh
+p*.sh
 corpus*
 fasttext*
 inference.py
-
+img
