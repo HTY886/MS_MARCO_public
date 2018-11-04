@@ -92,7 +92,7 @@ flags.DEFINE_boolean("is_group", True, "Whether to group different guery set")
 flags.DEFINE_list("bucket_range", [40, 361, 40], "range of bucket")
 
 flags.DEFINE_integer("batch_size", 50, "Batch size")
-flags.DEFINE_integer("num_steps", 60000, "Number of steps")
+flags.DEFINE_integer("num_steps", 30000, "Number of steps")
 flags.DEFINE_integer("checkpoint", 5000, "checkpoint for evaluation")
 flags.DEFINE_integer("period", 300, "period to save batch loss")
 flags.DEFINE_integer("val_num_batches", 150, "Num of batches for evaluation")

@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
 
-# Download SQuAD
-SQUAD_DIR=~/data/squad
-mkdir -p $SQUAD_DIR
-wget https://rajpurkar.github.io/SQuAD-explorer/dataset/train-v1.1.json -O $SQUAD_DIR/train-v1.1.json
-wget https://rajpurkar.github.io/SQuAD-explorer/dataset/dev-v1.1.json -O $SQUAD_DIR/dev-v1.1.json
+# Download MS_MARCO dataset
+MSMARCO_DIR=~/data/MS_MARCO
+mkdir -p $MSMARCO_DIR
+wget https://msmarco.blob.core.windows.net/msmarco/train_v2.1.json.gz -O $MSMARCO_DIR/train_v2.1.json.gz
+wget https://msmarco.blob.core.windows.net/msmarco/dev_v2.1.json.gz -O $MSMARCO_DIR/dev_v2.1.json.gz
+wget https://msmarco.blob.core.windows.net/msmarco/eval_v2.1_public.json.gz -O $MSMARCO_DIR/eval_v2.1_public.json.gz
+
+gzip -d $MSMARCO_DIR/train_v2.1.json.gz > $MSMARCO_DIR/train_v2.1.json
+gzip -d $MSMARCO_DIR/dev_v2.1.json.gz > $MSMARCO_DIR/dev_v2.1.json
+gzip -d $MSMARCO_DIR/eval_v2.1_public.json.gz > $MSMARCO_DIR/eval_v2.1_public.json
+
+
 
 # Download GloVe
 GLOVE_DIR=~/data/glove

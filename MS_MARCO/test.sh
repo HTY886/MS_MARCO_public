@@ -2,5 +2,5 @@
 
 
 touch *.py
-python config_t.py --mode test
+python config.py --mode test
 
