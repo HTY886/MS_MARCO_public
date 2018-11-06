@@ -66,4 +66,9 @@ on `corpus_for_emb` with dims=300
 |subset of dev-set w/ answer|1.3M|Fasttext|300|0.301|0.315|
 |subset of dev-set w/ answer|2.1M|GloVe w/ OOV|256|0.251|0.252|
 
+## Preprocessed Data
+As MS MARCO dataset requires large memory to preprocess, I put preprossed data(with default setting) here
+`\groups\public\htsungy\MS_MARCO_data\`
 
+## Trained Model (Limited Access)
+https://drive.google.com/file/d/1KWra-sjmAFjvNI9dpmuG77GXb0NA0qMq/view?usp=sharing
