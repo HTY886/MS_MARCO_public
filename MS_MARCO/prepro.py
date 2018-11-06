@@ -29,19 +29,22 @@ def convert_idx(text, tokens):
     return spans
 
 
-def process_file(filename, data_type, word_counter, char_counter, sampling):
+def process_file(filename, data_type, word_counter, char_counter, sampling, without_answer=False):
     print("Generating {} examples...".format(data_type))
+    print("Process {}".format(filename))
     examples = []
     eval_examples = {}
-
     with open(filename, "r") as fh:
         source = json.load(fh)
         query_ids = source['query_id']
         queries = source['query']
         passages = source['passages']
-        answers = source.get('answers', {})
 
-        flat = ((qid, passages[qid], queries[qid], answers.get(qid)) for qid in query_ids)
+        if without_answer:
+            flat = ((qid, passages[qid], queries[qid], ['ThereIsNoAnswerInTestExample']) for qid in query_ids)
+        else:
+            answers = source.get('answers', {})
+            flat = ((qid, passages[qid], queries[qid], answers.get(qid)) for qid in query_ids)
         q_num = len(source['query_id'])
         if sampling:
             q_num = 0.25*q_num
@@ -142,13 +145,8 @@ def _organize(flat, span_only, total, is_test=False):
             if not span_only:
                 if ind in matching:
                     continue
-                if passage.get('is_selected', False):
-                    matching.add(ind)
-                    #organized.append((qid, passage, query, ans, (9, 9+len(passage['passage_text']))))
-                    organized_buff.append((qid+'P'+str(ind), passage, query, ans, (0, 9)))
-                else:
-                    matching.add(ind)
-                    organized_buff.append((qid+'P'+str(ind), passage, query, ans, (0, 9)))
+                matching.add(ind)
+                organized_buff.append((qid+'P'+str(ind), passage, query, ans, (0, 9)))
         # Went through the whole thing. If there's still not match, then it got
         # filtered out.
         if len(matching) == 0:
@@ -357,7 +355,8 @@ def prepro(config):
     
     test_examples = dev_examples
     test_eval = dev_eval
-    
+    # Use dev-set when testing
+
     word_emb_file = config.fasttext_file if config.fasttext else config.glove_word_file
     char_emb_file = config.glove_char_file if config.pretrained_char else None
     char_emb_size = config.glove_char_size if config.pretrained_char else None
@@ -367,7 +366,7 @@ def prepro(config):
     if os.path.isfile(config.word2idx_file):
         with open(config.word2idx_file, "r") as fh:
             word2idx_dict = json.load(fh)
-    
+
     word_emb_mat, word2idx_dict = get_embedding(word_counter, "word", emb_file=word_emb_file,
                                                 size=config.glove_word_size, vec_size=config.glove_dim, token2idx_dict=word2idx_dict)
 
@@ -384,6 +383,10 @@ def prepro(config):
     save(config.word2idx_file, word2idx_dict, message="word2idx")
     save(config.char2idx_file, char2idx_dict, message="char2idx")
 
+    '''
+    test_examples, test_eval = process_file(
+        config.test_file, "test", word_counter, char_counter, False, True)
+    '''
     
     train_meta = build_features(config, train_examples, "train",
                    config.train_record_file, word2idx_dict, char2idx_dict)
@@ -399,6 +402,7 @@ def prepro(config):
     
     save(config.dev_eval_file, dev_eval, message="dev eval")
     save(config.dev_meta, dev_meta, message="dev meta")
+    
     save(config.test_eval_file, test_eval, message="test eval")
     save(config.test_meta, test_meta, message="test meta")
     

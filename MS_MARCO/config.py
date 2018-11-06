@@ -10,24 +10,24 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 home = os.path.expanduser("~")
 train_file = os.path.join(home, "data", "MS_MARCO", "train_v2.1.json")
 dev_file = os.path.join(home, "data", "MS_MARCO", "dev_v2.1.json")
-test_file = os.path.join(home, "data", "MS_MARCO", "dev_v2.1.json")
+test_file = os.path.join(home, "data", "MS_MARCO", "eval_v2.1_public.json")
 glove_word_file = os.path.join(home, "data", "glove", "glove.840B.300d.txt")
 
-target_dir = "data_fasttext_emb01/"
-log_dir = "log15/event"
-save_dir = "log15/model"
-answer_dir = "log15/answer"
+target_dir = "data/"
+log_dir = "log/event"
+save_dir = "log/model"
+answer_dir = "log/answer"
 train_record_file = os.path.join(target_dir, "train.tfrecords")
 dev_record_file = os.path.join(target_dir, "dev.tfrecords")
-test_record_file = os.path.join(target_dir, "test.tfrecords")
+test_record_file = os.path.join(target_dir, "test_s.tfrecords")
 word_emb_file = os.path.join(target_dir, "word_emb.json")
 char_emb_file = os.path.join(target_dir, "char_emb.json")
 train_eval = os.path.join(target_dir, "train_eval.json")
 dev_eval = os.path.join(target_dir, "dev_eval.json")
-test_eval = os.path.join(target_dir, "test_eval.json")
+test_eval = os.path.join(target_dir, "test_eval_s.json")
 dev_meta = os.path.join(target_dir, "dev_meta.json")
 train_meta = os.path.join(target_dir, "train_meta.json")
-test_meta = os.path.join(target_dir, "test_meta.json")
+test_meta = os.path.join(target_dir, "test_meta_s.json")
 word2idx_file = os.path.join(target_dir, "word2idx.json")
 char2idx_file = os.path.join(target_dir, "char2idx.json")
 answer_file = os.path.join(answer_dir, "answer.json")
@@ -92,7 +92,7 @@ flags.DEFINE_boolean("is_group", True, "Whether to group different guery set")
 flags.DEFINE_list("bucket_range", [40, 361, 40], "range of bucket")
 
 flags.DEFINE_integer("batch_size", 50, "Batch size")
-flags.DEFINE_integer("num_steps", 30000, "Number of steps")
+flags.DEFINE_integer("num_steps", 60000, "Number of steps")
 flags.DEFINE_integer("checkpoint", 5000, "checkpoint for evaluation")
 flags.DEFINE_integer("period", 300, "period to save batch loss")
 flags.DEFINE_integer("val_num_batches", 150, "Num of batches for evaluation")
