@@ -35,9 +35,9 @@ To get the official score, clone the MSMARCOV2 official repository and run the e
 git clone https://github.com/dfcf93/MSMARCOV2/tree/master/Q%2BA/Evaluation
 cd MSMARCOV2/Q+A/Evaluation/
 # run evaluation script
-sh run.sh $answer_for_evl.json $answer/ref.json
+sh run.sh $answer_for_evl.json $ref.json
 ```
-`answer_for_evl.json` and `answer/ref.json` can be found in `log/answer`
+`answer_for_evl.json` and `ref.json` can be found in `log/answer`
 
 The default directory for tensorboard log file is `log/event`
 
